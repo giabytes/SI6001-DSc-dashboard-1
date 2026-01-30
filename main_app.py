@@ -1,190 +1,256 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+import numpy as np
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
-    page_title="Dashboard Energía Renovable",
+    page_title="Dashboard Energético 360°",
     page_icon="⚡",
     layout="wide"
 )
 
+# --- ESTILOS CSS PERSONALIZADOS (Opcional para mejorar estética) ---
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f5f5f5;
+    }
+    div.stMetric {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # --- TÍTULO ---
-st.title("⚡ Análisis Exploratorio de Energía Renovable")
+st.title("⚡ Dashboard de Análisis: Energías Renovables")
+st.markdown("Un enfoque tridimensional: **Cuantitativo, Cualitativo y Gráfico**.")
 
-# --- BARRA LATERAL: CARGA DE ARCHIVOS ---
-st.sidebar.header("📂 Configuración")
-st.sidebar.markdown("Sube tu archivo CSV para analizar.")
+# --- BARRA LATERAL: CARGA Y FILTROS GLOBALES ---
+st.sidebar.header("1. Carga de Datos")
+uploaded_file = st.sidebar.file_uploader("Sube tu archivo CSV", type=["csv"])
 
-uploaded_file = st.sidebar.file_uploader("Cargar dataset (.csv)", type=["csv"])
-
-# Variable para almacenar el dataframe
+# Lógica de carga
 df = None
-
-# --- LÓGICA DE CARGA Y MANEJO DE ERRORES ---
 if uploaded_file is not None:
     try:
-        # Intentamos leer el archivo
         df = pd.read_csv(uploaded_file)
         
-        # Validación básica: Verificar si existen columnas críticas
-        required_columns = ['Fecha_Entrada_Operacion', 'Tecnologia', 'Operador', 'Capacidad_Instalada_MW']
-        if not all(col in df.columns for col in required_columns):
-            st.error("❌ El archivo no tiene el formato correcto. Faltan columnas clave (ej. Fecha_Entrada_Operacion, Tecnologia).")
+        # Validación de columnas mínimas
+        cols_req = ['Tecnologia', 'Operador', 'Capacidad_Instalada_MW']
+        if not all(col in df.columns for col in cols_req):
+            st.error("El archivo no contiene las columnas requeridas.")
             st.stop()
 
-        # Convertir fecha a datetime
-        df['Fecha_Entrada_Operacion'] = pd.to_datetime(df['Fecha_Entrada_Operacion'])
-        
-        st.sidebar.success("✅ Archivo cargado correctamente")
+        # Preprocesamiento
+        if 'Fecha_Entrada_Operacion' in df.columns:
+            df['Fecha_Entrada_Operacion'] = pd.to_datetime(df['Fecha_Entrada_Operacion'])
+            df['Año'] = df['Fecha_Entrada_Operacion'].dt.year
 
+        st.sidebar.success("Datos cargados correctamente")
+        
+        # --- FILTROS GLOBALES (Afectan a las 3 pestañas) ---
+        st.sidebar.divider()
+        st.sidebar.header("2. Filtros Globales")
+        
+        # Filtros dinámicos basados en el dataset
+        tech_options = df['Tecnologia'].unique()
+        sel_tech = st.sidebar.multiselect("Tecnología", tech_options, default=tech_options)
+        
+        op_options = df['Operador'].unique()
+        sel_op = st.sidebar.multiselect("Operador", op_options, default=op_options)
+        
+        # Aplicar filtros
+        df_filtered = df[
+            (df['Tecnologia'].isin(sel_tech)) & 
+            (df['Operador'].isin(sel_op))
+        ]
+        
+        if df_filtered.empty:
+            st.warning("No hay datos con los filtros actuales.")
+            st.stop()
+            
     except Exception as e:
-        st.error(f"❌ Ocurrió un error al procesar el archivo: {e}")
-        st.info("Por favor, verifica que el archivo sea un CSV válido e inténtalo de nuevo.")
+        st.error(f"Error al leer el archivo: {e}")
         st.stop()
 else:
-    # MENSAJE DE BIENVENIDA (ESTADO VACÍO)
-    st.info("👋 **Bienvenido!** Para comenzar, por favor sube un archivo CSV en el panel de la izquierda.")
-    st.markdown("""
-        **Formato esperado del CSV:**
-        Debe contener columnas como:
-        * `Tecnologia`
-        * `Operador`
-        * `Capacidad_Instalada_MW`
-        * `Fecha_Entrada_Operacion`
-        * `Estado_Actual`
-    """)
-    st.stop() # Detiene la ejecución aquí hasta que haya archivo
-
-# --- A PARTIR DE AQUÍ SOLO SE EJECUTA SI EL ARCHIVO CARGÓ BIEN ---
-
-# --- SIDEBAR (FILTROS) ---
-st.sidebar.divider()
-st.sidebar.header("🔍 Filtros")
-
-# Filtro por Tecnología
-tecnologias = df['Tecnologia'].unique()
-tech_filter = st.sidebar.multiselect("Seleccionar Tecnología", tecnologias, default=tecnologias)
-
-# Filtro por Operador
-operadores = df['Operador'].unique()
-op_filter = st.sidebar.multiselect("Seleccionar Operador", operadores, default=operadores)
-
-# Filtro por Estado
-if 'Estado_Actual' in df.columns:
-    estados = df['Estado_Actual'].unique()
-    status_filter = st.sidebar.multiselect("Estado del Proyecto", estados, default=estados)
-    
-    # Aplicar filtros
-    df_filtered = df[
-        (df['Tecnologia'].isin(tech_filter)) & 
-        (df['Operador'].isin(op_filter)) & 
-        (df['Estado_Actual'].isin(status_filter))
-    ]
-else:
-    # Fallback si no existe la columna Estado
-    df_filtered = df[
-        (df['Tecnologia'].isin(tech_filter)) & 
-        (df['Operador'].isin(op_filter))
-    ]
-
-# --- VERIFICAR SI LOS FILTROS DEJARON DATOS VACÍOS ---
-if df_filtered.empty:
-    st.warning("⚠️ No hay datos que coincidan con los filtros seleccionados.")
+    st.info("👋 Por favor, carga el archivo 'energia_renovable.csv' en la barra lateral para comenzar.")
     st.stop()
 
-# --- MÉTRICAS PRINCIPALES (KPIs) ---
-st.markdown("### 📊 Métricas Generales")
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.metric("Total Proyectos", df_filtered.shape[0])
-with col2:
-    if 'Capacidad_Instalada_MW' in df_filtered.columns:
-        total_mw = df_filtered['Capacidad_Instalada_MW'].sum()
-        st.metric("Capacidad Total (MW)", f"{total_mw:,.2f}")
-with col3:
-    if 'Eficiencia_Planta_Pct' in df_filtered.columns:
-        avg_eff = df_filtered['Eficiencia_Planta_Pct'].mean()
-        st.metric("Eficiencia Promedio", f"{avg_eff:.1f}%")
-with col4:
-    if 'Inversion_Inicial_MUSD' in df_filtered.columns:
-        total_inv = df_filtered['Inversion_Inicial_MUSD'].sum()
-        st.metric("Inversión Total (MUSD)", f"${total_inv:,.2f}")
-
+# --- INTERFAZ PRINCIPAL DIVIDIDA EN 3 PARTES ---
 st.divider()
 
-# --- PESTAÑAS DE ANÁLISIS ---
-tab1, tab2, tab3, tab4 = st.tabs(["🏭 Distribución", "📈 Rendimiento", "💰 Económico", "📅 Línea de Tiempo"])
+# Definimos las pestañas
+tab_cuant, tab_cual, tab_graf = st.tabs([
+    "🔢 1. Análisis Cuantitativo", 
+    "📝 2. Análisis Cualitativo", 
+    "📊 3. Análisis Gráfico"
+])
 
-# TAB 1: Distribución de Proyectos
-with tab1:
-    col_t1, col_t2 = st.columns(2)
+# ==========================================
+# PARTE 1: ANÁLISIS CUANTITATIVO
+# ==========================================
+with tab_cuant:
+    st.header("Análisis Numérico y Estadístico")
+    st.markdown("Resumen de las variables numéricas clave del dataset.")
+
+    # 1.1 KPIs
+    cols_num = df_filtered.select_dtypes(include=[np.number]).columns
     
-    with col_t1:
-        st.subheader("Proyectos por Tecnología")
-        conteo_tech = df_filtered['Tecnologia'].value_counts().reset_index()
-        conteo_tech.columns = ['Tecnologia', 'Cantidad']
-        fig_bar = px.bar(conteo_tech, x='Tecnologia', y='Cantidad', color='Tecnologia', 
-                            text='Cantidad', template="plotly_white")
-        st.plotly_chart(fig_bar, use_container_width=True)
-        
-    with col_t2:
-        st.subheader("Participación por Operador")
-        fig_pie = px.pie(df_filtered, names='Operador', values='Capacidad_Instalada_MW', 
-                            title='Capacidad (MW) por Operador', hole=0.4)
-        st.plotly_chart(fig_pie, use_container_width=True)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Registros", df_filtered.shape[0])
+    
+    if 'Capacidad_Instalada_MW' in df_filtered.columns:
+        c2.metric("Capacidad Total (MW)", f"{df_filtered['Capacidad_Instalada_MW'].sum():,.2f}")
+        c3.metric("Capacidad Promedio", f"{df_filtered['Capacidad_Instalada_MW'].mean():,.2f}")
+    
+    if 'Inversion_Inicial_MUSD' in df_filtered.columns:
+        c4.metric("Inversión Total (MUSD)", f"${df_filtered['Inversion_Inicial_MUSD'].sum():,.2f}")
 
-# TAB 2: Relación Técnica (Scatter Plots)
-with tab2:
-    st.subheader("Relación Capacidad Instalada vs. Generación Diaria")
-    if 'Generacion_Diaria_MWh' in df_filtered.columns:
-        fig_scatter = px.scatter(
-            df_filtered, 
-            x='Capacidad_Instalada_MW', 
-            y='Generacion_Diaria_MWh', 
-            color='Tecnologia',
-            size='Eficiencia_Planta_Pct' if 'Eficiencia_Planta_Pct' in df_filtered.columns else None,
-            hover_data=['Operador'],
-            template="plotly_dark",
-            title="Capacidad vs Generación"
-        )
-        st.plotly_chart(fig_scatter, use_container_width=True)
+    st.divider()
+
+    # 1.2 Estadísticas Descriptivas
+    col_desc1, col_desc2 = st.columns([1, 2])
+    
+    with col_desc1:
+        st.subheader("Selecciona Variable")
+        var_stats = st.selectbox("Variable para analizar en detalle:", cols_num)
+        
+        # Mostrar stats específicos de esa variable
+        series = df_filtered[var_stats]
+        st.write(f"**Mínimo:** {series.min()}")
+        st.write(f"**Máximo:** {series.max()}")
+        st.write(f"**Mediana:** {series.median()}")
+        st.write(f"**Desviación Std:** {series.std():.2f}")
+
+    with col_desc2:
+        st.subheader("Tabla Descriptiva Completa")
+        st.dataframe(df_filtered.describe().T, use_container_width=True)
+
+    # 1.3 Matriz de Correlación
+    st.subheader("🔥 Matriz de Correlación")
+    st.markdown("¿Qué variables numéricas están relacionadas entre sí?")
+    
+    if len(cols_num) > 1:
+        corr_matrix = df_filtered[cols_num].corr()
+        fig_corr = px.imshow(corr_matrix, text_auto=True, aspect="auto", color_continuous_scale="RdBu_r")
+        st.plotly_chart(fig_corr, use_container_width=True)
     else:
-        st.info("Datos de generación diaria no disponibles.")
+        st.warning("No hay suficientes columnas numéricas para correlación.")
 
-# TAB 3: Análisis Económico
-with tab3:
-    col_e1, col_e2 = st.columns(2)
-    
-    with col_e1:
-        if 'Inversion_Inicial_MUSD' in df_filtered.columns:
-            st.subheader("Distribución de Inversión por Tecnología")
-            fig_box = px.box(df_filtered, x='Tecnologia', y='Inversion_Inicial_MUSD', color='Tecnologia',
-                                points="all", title="Rango de Inversión (MUSD)")
-            st.plotly_chart(fig_box, use_container_width=True)
+# ==========================================
+# PARTE 2: ANÁLISIS CUALITATIVO
+# ==========================================
+with tab_cual:
+    st.header("Análisis Categórico y Clasificación")
+    st.markdown("Desglose de datos por etiquetas, estados y operadores.")
+
+    # Obtener columnas categóricas (object/boolean)
+    cols_cat = df_filtered.select_dtypes(include=['object', 'bool']).columns.tolist()
+
+    if cols_cat:
+        col_q1, col_q2 = st.columns(2)
+
+        # 2.1 Tablas de Frecuencia Dinámicas
+        with col_q1:
+            st.subheader("Frecuencia por Categoría")
+            cat_selected = st.selectbox("Elige una categoría para contar:", cols_cat, index=0)
+            
+            conteo = df_filtered[cat_selected].value_counts().reset_index()
+            conteo.columns = [cat_selected, 'Conteo']
+            
+            # Mostrar tabla estilizada
+            st.dataframe(conteo, use_container_width=True, hide_index=True)
+
+        # 2.2 Tabla Cruzada (Pivot Table) Dinámica
+        with col_q2:
+            st.subheader("Tabla Cruzada (Crosstab)")
+            st.markdown("Cruza dos variables cualitativas.")
+            
+            row_var = st.selectbox("Filas:", cols_cat, index=0, key='row_var')
+            # Intentar seleccionar otra columna por defecto para las columnas
+            idx_col = 1 if len(cols_cat) > 1 else 0
+            col_var = st.selectbox("Columnas:", cols_cat, index=idx_col, key='col_var')
+            
+            if row_var and col_var:
+                crosstab = pd.crosstab(df_filtered[row_var], df_filtered[col_var])
+                st.dataframe(crosstab, use_container_width=True)
+
+        st.divider()
         
-    with col_e2:
-        if 'Estado_Actual' in df_filtered.columns:
-            st.subheader("Estado Actual de los Proyectos")
-            estado_counts = df_filtered['Estado_Actual'].value_counts().reset_index()
-            estado_counts.columns = ['Estado', 'Cantidad']
-            fig_status = px.bar(estado_counts, x='Cantidad', y='Estado', orientation='h', 
-                                color='Estado', title="Conteo por Estado del Proyecto")
-            st.plotly_chart(fig_status, use_container_width=True)
+        # 2.3 Modo "Insights" (Top Performers)
+        st.subheader("🏆 Top Categorías")
+        if 'Operador' in df_filtered.columns and 'Capacidad_Instalada_MW' in df_filtered.columns:
+            top_op = df_filtered.groupby('Operador')['Capacidad_Instalada_MW'].sum().sort_values(ascending=False).head(3)
+            st.write(f"**Operador con mayor capacidad:** {top_op.index[0]} ({top_op.values[0]:.2f} MW)")
+    else:
+        st.warning("No se encontraron columnas de texto/categóricas.")
 
-# TAB 4: Serie de Tiempo
-with tab4:
-    st.subheader("Entrada en Operación a lo largo del tiempo")
+# ==========================================
+# PARTE 3: ANÁLISIS GRÁFICO
+# ==========================================
+with tab_graf:
+    st.header("Visualización Interactiva")
     
-    # Agrupar por año-mes
-    timeline = df_filtered.set_index('Fecha_Entrada_Operacion').resample('M')['Capacidad_Instalada_MW'].sum().reset_index()
-    timeline['Capacidad_Acumulada'] = timeline['Capacidad_Instalada_MW'].cumsum()
-    
-    fig_line = px.line(timeline, x='Fecha_Entrada_Operacion', y='Capacidad_Acumulada', 
-                        markers=True, title="Crecimiento de Capacidad Instalada Acumulada (MW)")
-    st.plotly_chart(fig_line, use_container_width=True)
+    # Selector de Tipo de Gráfico
+    chart_type = st.radio("Selecciona el tipo de visualización:", 
+                          ["Distribución (Barras)", "Tendencia (Líneas)", "Relación (Dispersión)", "Proporción (Torta)"],
+                          horizontal=True)
 
-# --- DATOS CRUDOS ---
-with st.expander("Ver Datos Crudos"):
-    st.dataframe(df_filtered)
+    # Contenedor dinámico para controles
+    with st.container():
+        c_g1, c_g2, c_g3 = st.columns(3)
+        
+        if chart_type == "Distribución (Barras)":
+            with c_g1:
+                x_axis = st.selectbox("Eje X (Categoría):", cols_cat)
+            with c_g2:
+                y_axis = st.selectbox("Eje Y (Numérico):", cols_num)
+            with c_g3:
+                color_by = st.selectbox("Color:", [None] + cols_cat)
+            
+            fig = px.bar(df_filtered, x=x_axis, y=y_axis, color=color_by, title=f"{y_axis} por {x_axis}")
+            st.plotly_chart(fig, use_container_width=True)
+
+        elif chart_type == "Tendencia (Líneas)":
+            if 'Fecha_Entrada_Operacion' in df_filtered.columns:
+                with c_g1:
+                    y_axis_line = st.selectbox("Variable a medir en el tiempo:", cols_num, key='line_y')
+                
+                # Agrupación temporal automática
+                df_time = df_filtered.sort_values('Fecha_Entrada_Operacion')
+                fig = px.line(df_time, x='Fecha_Entrada_Operacion', y=y_axis_line, markers=True, title=f"Evolución de {y_axis_line}")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("No se encontró columna de fecha para hacer tendencias.")
+
+        elif chart_type == "Relación (Dispersión)":
+            with c_g1:
+                scat_x = st.selectbox("Eje X:", cols_num, index=0)
+            with c_g2:
+                scat_y = st.selectbox("Eje Y:", cols_num, index=1 if len(cols_num)>1 else 0)
+            with c_g3:
+                scat_col = st.selectbox("Color por:", cols_cat)
+            
+            fig = px.scatter(df_filtered, x=scat_x, y=scat_y, color=scat_col, 
+                             size='Capacidad_Instalada_MW' if 'Capacidad_Instalada_MW' in df_filtered.columns else None,
+                             hover_data=df_filtered.columns,
+                             title=f"Relación: {scat_x} vs {scat_y}")
+            st.plotly_chart(fig, use_container_width=True)
+
+        elif chart_type == "Proporción (Torta)":
+            with c_g1:
+                pie_names = st.selectbox("Categoría (Sectores):", cols_cat)
+            with c_g2:
+                pie_values = st.selectbox("Valores (Tamaño):", cols_num)
+            
+            fig = px.pie(df_filtered, names=pie_names, values=pie_values, title=f"Proporción de {pie_values} por {pie_names}")
+            st.plotly_chart(fig, use_container_width=True)
+
+# --- PIE DE PÁGINA ---
+st.divider()
+st.caption("Generado con Streamlit • Análisis de Datos Energéticos")
