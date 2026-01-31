@@ -74,7 +74,7 @@ if uploaded_file is not None:
             st.markdown("### ✨ Análisis de Hallazgos")
             
             # Preparamos un contexto pequeño para el LLM
-            stats_summary = df.describe(include='all', datetime_is_numeric=True).to_string()
+            stats_summary = df.describe(include='all').to_string()
             
             prompt = f"""
             Actúa como una experta analista de datos que es súper 'girly', moderna y divertida. 
