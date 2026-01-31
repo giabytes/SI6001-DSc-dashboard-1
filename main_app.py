@@ -3,23 +3,39 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="Universal CSV Explorer", layout="wide")
+# --- CONFIGURACIÓN DE LA PÁGINA ---
+st.set_page_config(page_title="Explorador Universal con Slider", layout="wide")
 
-st.title("📊 Explorador Universal de Datos")
-st.markdown("Sube cualquier archivo CSV y analizaré sus dimensiones automáticamente.")
+st.title("📊 Explorador Universal de Datos Dinámico")
+st.markdown("Carga cualquier CSV y usa la barra lateral para limitar el alcance del análisis.")
 
-# --- CARGA DE DATOS ---
-st.sidebar.header("📂 Entrada de Datos")
+# --- BARRA LATERAL: CARGA Y CONTROL DE REGISTROS ---
+st.sidebar.header("📂 1. Entrada de Datos")
 uploaded_file = st.sidebar.file_uploader("Sube tu archivo CSV", type=["csv"])
 
 if uploaded_file is not None:
     try:
-        # Carga inicial
-        df = pd.read_csv(uploaded_file)
+        # Carga inicial de datos
+        df_raw = pd.read_csv(uploaded_file)
+        total_filas = len(df_raw)
+
+        # --- BARRA DE DESPLAZAMIENTO (SLIDER) ---
+        st.sidebar.divider()
+        st.sidebar.header("🔢 2. Control de Registros")
         
+        # Slider para elegir cantidad de registros
+        cantidad = st.sidebar.slider(
+            "Selecciona la cantidad de registros a analizar:",
+            min_value=1,
+            max_value=total_filas,
+            value=min(100, total_filas) # Valor por defecto: 100 o el total si es menor
+        )
+        
+        # Aplicamos el recorte de datos basándonos en el slider
+        df = df_raw.head(cantidad).copy()
+        st.sidebar.info(f"Analizando los primeros {cantidad} registros de {total_filas} totales.")
+
         # --- DETECCIÓN AUTOMÁTICA DE TIPOS ---
-        # Intentar convertir columnas que parecen fechas
         for col in df.columns:
             if df[col].dtype == 'object':
                 try:
@@ -27,94 +43,58 @@ if uploaded_file is not None:
                 except:
                     pass
 
-        # Separar tipos de columnas
         cols_num = df.select_dtypes(include=[np.number]).columns.tolist()
         cols_cat = df.select_dtypes(include=['object', 'category', 'bool']).columns.tolist()
         cols_date = df.select_dtypes(include=['datetime64']).columns.tolist()
 
-        st.sidebar.success(f"Cargadas {df.shape[0]} filas y {df.shape[1]} columnas.")
+        # --- PESTAÑAS DE ANÁLISIS ---
+        tab_cuant, tab_cual, tab_graf = st.tabs(["🔢 Cuantitativo", "📝 Cualitativo", "📊 Gráfico"])
 
-        # --- FILTROS DINÁMICOS ---
-        st.sidebar.divider()
-        st.sidebar.subheader("🎯 Filtros Rápidos")
-        if cols_cat:
-            cat_to_filter = st.sidebar.selectbox("Filtrar por categoría:", ["Ninguno"] + cols_cat)
-            if cat_to_filter != "Ninguno":
-                val_filter = st.sidebar.multiselect(f"Valores de {cat_to_filter}", df[cat_to_filter].unique())
-                if val_filter:
-                    df = df[df[cat_to_filter].isin(val_filter)]
-
-        # --- PESTAÑAS ---
-        tab_cuant, tab_cual, tab_graf = st.tabs(["🔢 Cuantitativo", "📝 Cualitativo", "📊 Gráfico Dinámico"])
-
-        # ==========================================
-        # 1. ANÁLISIS CUANTITATIVO (NÚMEROS)
-        # ==========================================
+        # 1. ANÁLISIS CUANTITATIVO
         with tab_cuant:
+            st.subheader(f"Estadísticas de los {cantidad} registros")
             if cols_num:
-                st.subheader("Resumen Estadístico")
                 st.dataframe(df.describe().T, use_container_width=True)
-                
-                st.divider()
-                st.subheader("🔥 Correlación de Variables")
                 if len(cols_num) > 1:
-                    fig_corr = px.imshow(df[cols_num].corr(), text_auto=True, color_continuous_scale='RdBu_r')
+                    st.markdown("**Matriz de Correlación**")
+                    fig_corr = px.imshow(df[cols_num].corr(), text_auto=True, color_continuous_scale='Viridis')
                     st.plotly_chart(fig_corr, use_container_width=True)
             else:
-                st.warning("No se detectaron columnas numéricas.")
+                st.warning("No hay columnas numéricas para analizar.")
 
-        # ==========================================
-        # 2. ANÁLISIS CUALITATIVO (CATEGORÍAS)
-        # ==========================================
+        # 2. ANÁLISIS CUALITATIVO
         with tab_cual:
+            st.subheader("Distribución Categórica")
             if cols_cat:
-                c1, c2 = st.columns(2)
-                with c1:
-                    target_cat = st.selectbox("Contar valores de:", cols_cat)
-                    st.write(df[target_cat].value_counts())
-                with c2:
-                    if len(cols_cat) > 1:
-                        st.subheader("Cruce de Categorías")
-                        c_row = st.selectbox("Filas:", cols_cat, index=0)
-                        c_col = st.selectbox("Columnas:", cols_cat, index=1)
-                        st.dataframe(pd.crosstab(df[c_row], df[c_col]), use_container_width=True)
+                target_cat = st.selectbox("Analizar columna:", cols_cat)
+                col_counts = df[target_cat].value_counts().reset_index()
+                st.table(col_counts)
             else:
-                st.warning("No se detectaron columnas categóricas.")
+                st.warning("No hay columnas categóricas.")
 
-        # ==========================================
-        # 3. ANÁLISIS GRÁFICO (EXPLORACIÓN)
-        # ==========================================
+        # 3. ANÁLISIS GRÁFICO
         with tab_graf:
-            tipo_g = st.selectbox("Tipo de Gráfico:", ["Barras", "Dispersión", "Histograma", "Líneas"])
+            st.subheader("Visualización Dinámica")
+            tipo_g = st.radio("Gráfico:", ["Barras", "Dispersión", "Líneas"], horizontal=True)
             
-            gc1, gc2, gc3 = st.columns(3)
+            c1, c2 = st.columns(2)
+            with c1:
+                gx = st.selectbox("Eje X:", cols_cat + cols_date + cols_num)
+            with c2:
+                gy = st.selectbox("Eje Y:", cols_num) if cols_num else st.selectbox("Eje Y:", cols_cat)
             
-            with gc1:
-                # Eje X: Puede ser categórico o fecha
-                x_options = cols_cat + cols_date + cols_num
-                gx = st.selectbox("Eje X:", x_options)
-            with gc2:
-                # Eje Y: Normalmente numérico
-                gy = st.selectbox("Eje Y:", cols_num if cols_num else x_options)
-            with gc3:
-                gcol = st.selectbox("Color por:", ["Ninguno"] + cols_cat)
-            
-            color_param = gcol if gcol != "Ninguno" else None
-
             if tipo_g == "Barras":
-                fig = px.bar(df, x=gx, y=gy, color=color_param, barmode="group")
+                fig = px.bar(df, x=gx, y=gy, color=cols_cat[0] if cols_cat else None)
             elif tipo_g == "Dispersión":
-                fig = px.scatter(df, x=gx, y=gy, color=color_param)
-            elif tipo_g == "Histograma":
-                fig = px.histogram(df, x=gx, color=color_param)
-            elif tipo_g == "Líneas":
-                fig = px.line(df, x=gx, y=gy, color=color_param)
-
+                fig = px.scatter(df, x=gx, y=gy, color=cols_cat[0] if cols_cat else None)
+            else:
+                fig = px.line(df, x=gx, y=gy)
+                
             st.plotly_chart(fig, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Error al procesar el dataset: {e}")
-        st.button("Intentar de nuevo")
-
+        st.error(f"Error: {e}")
+        if st.button("Reintentar"):
+            st.rerun()
 else:
-    st.info("Esperando archivo CSV... Sube uno en el panel de la izquierda.")
+    st.info("Sube un archivo CSV para activar el slider y comenzar el análisis.")
